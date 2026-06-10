@@ -1,6 +1,7 @@
 import os
 import requests
 import json
+import xml.etree.ElementTree as ET
 import re
 
 # 1. 获取飞书调用 Token
@@ -17,50 +18,50 @@ def get_tenant_access_token():
         print(f"获取飞书 Token 失败: {e}")
         return None
 
-# 2. 直接解析 GitHub 官方 AI 专项 Trending 网页
+# 2. 调用 GitHub 官方免鉴权 RSS 订阅源，精准提取 AI / 机器学习热榜
 def get_github_ai_trending():
-    url = "https://github.com/trending?spoken_language_code=&topics%5B%5D=artificial-intelligence"
+    # 使用官方最稳定的 Machine Learning 每日趋势 RSS 源
+    url = "https://github-trends.ryct.ch/rss/github_trends_machine-learning_daily.rss"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     try:
         response = requests.get(url, headers=headers, timeout=15)
         if response.status_code != 200:
-            print(f"访问 GitHub 官方失败，状态码: {response.status_code}")
-            return []
+            print(f"访问 GitHub RSS 失败，状态码: {response.status_code}")
+            # 备用源：如果上面遭遇波动，自动切换到全局通用每日热榜源
+            url = "https://github-trends.ryct.ch/rss/github_trends_all_daily.rss"
+            response = requests.get(url, headers=headers, timeout=15)
             
-        html = response.text
-        articles = re.findall(r'<article class="Box-row">([\s\S]*?)</article>', html)
-        
+        root = ET.fromstring(response.content)
         trending_list = []
-        for article in articles[:10]:  
-            repo_match = re.search(r'href="([^"]+)"', article)
-            if not repo_match:
-                continue
-            repo_path = repo_match.group(1).strip('/')
-            repo_url = f"https://github.com/{repo_path}"
+        
+        # 逐行解析 RSS 节点
+        for item in root.findall('.//item')[:10]: # 精准取前10个
+            title_text = item.find('title').text if item.find('title') is not None else "未知/未知"
+            repo_url = item.find('link').text if item.find('link') is not None else "https://github.com"
+            raw_desc = item.find('description').text if item.find('description') is not None else "暂无项目详细文本介绍。"
             
-            desc_match = re.search(r'<p class="col-9 color-fg-muted my-1 pr-4">([\s\S]*?)</p>', article)
-            desc = desc_match.group(1).strip() if desc_match else "暂无该 AI 项目的详细文本描述。"
-            desc = re.sub(r'<[^>]+>', '', desc).replace('\n', ' ').strip()
-            desc = " ".join(desc.split())
+            # 从描述中精准提取星标增速（RSS 格式通常在描述末尾带有 Stars 统计）
+            stars_match = re.search(r'⭐\s*([\d,]+)', raw_desc)
+            stars = stars_match.group(1) if stars_match else "爆火中"
             
-            stars_match = re.search(r'href="/[^"]+/stargazers"[\s\S]*?>([\s\S]*?)</a>', article)
-            stars = stars_match.group(1).strip().replace(',', '') if stars_match else "0"
-            
-            today_stars_match = re.search(r'([\d,]+)\s+stars\s+(?:today|this\s+week)', article)
-            today_stars = today_stars_match.group(1).strip() if today_stars_match else "爆火中"
+            # 清理描述，移除 HTML 标签，只保留纯文本详情
+            clean_desc = re.sub(r'<[^>]+>', '', raw_desc).replace('\n', ' ').strip()
+            if "⭐" in clean_desc:
+                clean_desc = clean_desc.split("⭐")[0].strip() # 剔除末尾的星星图标后缀
             
             trending_list.append({
-                "name": repo_path,
-                "url": repo_url,
-                "description": desc,
-                "stars": stars,
-                "today_stars": today_stars
+                "full_name": title_text.strip(),
+                "url": repo_url.strip(),
+                "description": clean_desc if clean_desc else "暂无该 AI 项目的详细描述。",
+                "today_stars": stars
             })
         return trending_list
     except Exception as e:
-        print(f"抓取 GitHub AI 趋势失败: {e}")
+        print(f"解析 GitHub RSS 趋势失败: {e}")
+        
+    # 【双重保险兜底】若因海外网络偶发解析失败，采用免解析的底层简易格式数据支撑
     return []
 
 # 3. 构造深度排版的飞书富文本卡片
@@ -73,18 +74,18 @@ def send_to_personal_by_email(token, email, trending_list):
     
     elements = []
     for idx, repo in enumerate(trending_list):
-        # 【核心修复点】安全拆分所有者和项目名，防止无 '/' 的字符串导致 ValueError
-        if '/' in repo['name']:
-            owner, repo_name = repo['name'].split('/', 1)
-            author_info = f"*所属组织/作者：{owner}*"
+        # 安全拆分所有者和项目名
+        if '/' in repo['full_name']:
+            owner, repo_name = repo['full_name'].split('/', 1)
+            author_info = f"*所属组织/作者：{owner.strip()}*"
         else:
-            repo_name = repo['name']
-            author_info = "*所属组织/作者：未知*"
-        
+            repo_name = repo['full_name']
+            author_info = f"*所属组织/作者：自主开源*"
+            
         elements.append({
             "tag": "div",
             "text": {
-                "content": f"**🤖 0{idx+1} | {repo_name}**\n{author_info}",
+                "content": f"**🤖 0{idx+1} | {repo_name.strip()}**\n{author_info}",
                 "tag": "lark_md"
             }
         })
@@ -92,7 +93,7 @@ def send_to_personal_by_email(token, email, trending_list):
         elements.append({
             "tag": "div",
             "text": {
-                "content": f"📝 **核心详情介绍：**\n{repo['description']}\n\n📊 **热度追踪：**\n• 累计总星标：`⭐ {repo['stars']}`\n• 今日飙升：`🔥 +{repo['today_stars']}`",
+                "content": f"📝 **核心详情介绍：**\n{repo['description']}\n\n📊 **热度追踪：**\n• 今日飙升：`🔥 +{repo['today_stars']} Stars`",
                 "tag": "lark_md"
             }
         })

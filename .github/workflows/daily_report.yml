@@ -4,7 +4,7 @@ on:
   schedule:
     # 每天早上 8:00 触发 (UTC 时间 0:00)
     - cron: '0 0 * * *'
-  workflow_dispatch: # 允许你在 GitHub 页面上手动点击运行测试
+  workflow_dispatch: # 允许手动点击运行测试
 
 jobs:
   push_trending:
@@ -16,7 +16,8 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-state: '3.10'
+        # 修复此处的参数名，从 python-state 改为 python-version
+        python-version: '3.10'
 
     - name: Install dependencies
       run: |
@@ -24,6 +25,7 @@ jobs:
 
     - name: Run Python Script
       env:
-        FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
-        FEISHU_SECRET: ${{ secrets.FEISHU_SECRET }}
+        FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
+        FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+        FEISHU_RECEIVER_MOBILE: ${{ secrets.FEISHU_RECEIVER_MOBILE }}
       run: python trending.py

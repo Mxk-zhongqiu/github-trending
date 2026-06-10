@@ -1,38 +1,38 @@
 import os
 import requests
+import json
 
-# 1. 获取飞书调用 Token 
+# 1. 获取飞书调用 Token
 def get_tenant_access_token():
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     payload = {
-        "app_id": os.environ.get("FEISHU_APP_ID"), [cite: 7]
-        "app_secret": os.environ.get("FEISHU_APP_SECRET") [cite: 7]
+        "app_id": os.environ.get("FEISHU_APP_ID"),
+        "app_secret": os.environ.get("FEISHU_APP_SECRET")
     }
     res = requests.post(url, json=payload).json()
     return res.get("tenant_access_token")
 
-# 2. 抓取 GitHub Trending 数据 
+# 2. 抓取 GitHub Trending 数据
 def get_github_trending():
-    # 使用稳定的趋势图 API 
     url = "https://api.gitter.xyz/trending" 
     try:
         response = requests.get(url, timeout=10)
         if response.status_code == 200:
-            return response.json()[:10] # 取前 10 个项目 
+            return response.json()[:10]  # 取前 10 个项目
     except Exception as e:
         print(f"抓取失败: {e}")
     return []
 
-# 3. 给个人发送卡片消息 
+# 3. 给个人发送卡片消息
 def send_to_personal(token, trending_list):
-    # receive_id_type 改为 mobile
+    # 使用手机号作为接收者类型
     url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=mobile"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json; charset=utf-8"
     }
     
-    # 构造卡片内容 
+    # 构造卡片内容
     elements = []
     for idx, repo in enumerate(trending_list):
         elements.append({
@@ -45,20 +45,18 @@ def send_to_personal(token, trending_list):
         elements.append({"tag": "hr"})
         
     if elements:
-        elements.pop() # 移除最后一个分割线 
+        elements.pop()  # 移除最后一个分割线
 
     card_content = {
         "config": {"enable_forward": True},
         "header": {
             "title": {"content": "🔥 GitHub 每日热门项目（个人专属版）", "tag": "plain_text"},
-            "template": "violet" # 个人版换个好看的紫色 
+            "template": "violet"
         },
         "elements": elements
     }
 
-    import json
     payload = {
-        # 读取你配置的手机号环境变量
         "receive_id": os.environ.get("FEISHU_RECEIVER_MOBILE"), 
         "msg_type": "interactive",
         "content": json.dumps(card_content)

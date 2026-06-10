@@ -17,29 +17,7 @@ def get_tenant_access_token():
         print(f"获取飞书 Token 失败: {e}")
         return None
 
-# 2. 通过手机号获取用户的 user_id
-def get_user_id_by_mobile(token, mobile):
-    url = "https://open.feishu.cn/open-apis/contact/v3/users/batch_get_id?user_id_type=user_id"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json; charset=utf-8"
-    }
-    payload = {
-        "mobiles": [mobile]
-    }
-    try:
-        res = requests.post(url, headers=headers, json=payload).json()
-        user_list = res.get("data", {}).get("user_list", [])
-        if user_list and "user_id" in user_list[0]:
-            return user_list[0]["user_id"]
-        else:
-            print(f"手机号查询失败，飞书返回: {res}")
-            return None
-    except Exception as e:
-        print(f"请求查询 user_id 接口出错: {e}")
-        return None
-
-# 3. 直接解析 GitHub 官方 Trending 网页
+# 2. 直接解析 GitHub 官方 Trending 网页
 def get_github_trending():
     url = "https://github.com/trending"
     headers = {
@@ -80,9 +58,10 @@ def get_github_trending():
         print(f"直接抓取官方源失败: {e}")
     return []
 
-# 4. 给个人发送卡片消息
-def send_to_personal(token, user_id, trending_list):
-    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=user_id"
+# 3. 给个人发送卡片消息（通过邮箱投递）
+def send_to_personal_by_email(token, email, trending_list):
+    # 将 receive_id_type 改为飞书官方支持的 email
+    url = "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=email"
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json; charset=utf-8"
@@ -105,14 +84,14 @@ def send_to_personal(token, user_id, trending_list):
     card_content = {
         "config": {"enable_forward": True},
         "header": {
-            "title": {"content": "🔥 GitHub 每日热门项目（官方直连版）", "tag": "plain_text"},
+            "title": {"content": "🔥 GitHub 每日热门项目（个人专属版）", "tag": "plain_text"},
             "template": "violet"
         },
         "elements": elements
     }
 
     payload = {
-        "receive_id": user_id, 
+        "receive_id": email, 
         "msg_type": "interactive",
         "content": json.dumps(card_content)
     }
@@ -125,15 +104,13 @@ if __name__ == "__main__":
     if not token:
         exit(1)
         
-    mobile = os.environ.get("FEISHU_RECEIVER_MOBILE")
-    user_id = get_user_id_by_mobile(token, mobile)
-    
-    if not user_id:
-        print("未能获取到有效的飞书 User ID，请检查应用权限或手机号设置。")
+    email = os.environ.get("FEISHU_RECEIVER_EMAIL")
+    if not email:
+        print("未配置 FEISHU_RECEIVER_EMAIL 环境变量")
         exit(1)
         
     trending = get_github_trending()
     if trending:
-        send_to_personal(token, user_id, trending)
+        send_to_personal_by_email(token, email, trending)
     else:
         print("未获取到今日 Trending 数据")

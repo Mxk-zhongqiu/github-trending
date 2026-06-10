@@ -16,7 +16,6 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        # 修复此处的参数名，从 python-state 改为 python-version
         python-version: '3.10'
 
     - name: Install dependencies
@@ -27,5 +26,6 @@ jobs:
       env:
         FEISHU_APP_ID: ${{ secrets.FEISHU_APP_ID }}
         FEISHU_APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-        FEISHU_RECEIVER_MOBILE: ${{ secrets.FEISHU_RECEIVER_MOBILE }}
+        # 修正此处：将手机号环境变量替换为邮箱环境变量
+        FEISHU_RECEIVER_EMAIL: ${{ secrets.FEISHU_RECEIVER_EMAIL }}
       run: python trending.py
